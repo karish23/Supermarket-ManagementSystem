@@ -13,12 +13,14 @@ public class MainForm : Form
     private readonly SupplierService _supplierService;
     private readonly CategoryService _categoryService;
     private readonly StockService _stockService;
-
+    private readonly SaleService _saleService;
+    private readonly ReportService _reportService;
 
     private DataGridView dgvProducts = new();
     private DataGridView dgvSuppliers = new();
     private DataGridView dgvCart = new();
-
+    private DataGridView dgvSales = new();
+    private DataGridView dgvReports = new();
 
     private TextBox txtProductCode = new();
     private TextBox txtBarcode = new();
@@ -43,6 +45,11 @@ public class MainForm : Form
     private TextBox txtSupplierEmail = new();
     private TextBox txtSupplierAddress = new();
 
+    private ComboBox cmbSaleProduct = new();
+    private NumericUpDown numSaleQuantity = new();
+    private ComboBox cmbPaymentMethod = new();
+    private Label lblSaleTotal = new();
+    private readonly List<CartLine> _cart = new();
 
     private int? _selectedProductId;
     private int? _selectedSupplierId;
@@ -56,7 +63,8 @@ public class MainForm : Form
         _supplierService = new SupplierService(_db);
         _categoryService = new CategoryService(_db);
         _stockService = new StockService(_db);
-
+        _saleService = new SaleService(_db);
+        _reportService = new ReportService(_db);
 
         Text = "Local Supermarket Management System";
         Width = 1250;
@@ -73,6 +81,8 @@ public class MainForm : Form
         var tabs = new TabControl { Dock = DockStyle.Fill };
         tabs.TabPages.Add(BuildProductsTab());
         tabs.TabPages.Add(BuildSuppliersTab());
+        tabs.TabPages.Add(BuildSalesTab());
+        tabs.TabPages.Add(BuildReportsTab());
         Controls.Add(tabs);
     }
 
@@ -244,7 +254,75 @@ public class MainForm : Form
         return tab;
     }
 
-    
+    private TabPage BuildSalesTab()
+    {
+        var tab = new TabPage("Sales");
+        var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 260 };
+        tab.Controls.Add(split);
+
+        var top = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(10) };
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+
+        var saleForm = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
+        saleForm.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        saleForm.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddLabeledControl(saleForm, "Product", cmbSaleProduct);
+        numSaleQuantity.Minimum = 1; numSaleQuantity.Maximum = 10000; numSaleQuantity.Value = 1;
+        AddLabeledControl(saleForm, "Quantity", numSaleQuantity);
+        cmbPaymentMethod.Items.AddRange(new object[] { "Cash", "Card", "Mobile Payment" });
+        cmbPaymentMethod.SelectedIndex = 0;
+        AddLabeledControl(saleForm, "Payment", cmbPaymentMethod);
+        lblSaleTotal.Text = "Total: 0.00";
+        lblSaleTotal.Font = new Font(Font, FontStyle.Bold);
+        AddLabeledControl(saleForm, "Sale Total", lblSaleTotal);
+
+        var saleButtons = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        saleButtons.Controls.Add(MakeButton("Add To Cart", AddToCart));
+        saleButtons.Controls.Add(MakeButton("Remove Item", RemoveCartItem));
+        saleButtons.Controls.Add(MakeButton("Complete Sale", CompleteSale));
+        saleButtons.Controls.Add(MakeButton("Clear Cart", ClearCart));
+        saleForm.Controls.Add(new Label());
+        saleForm.Controls.Add(saleButtons);
+        top.Controls.Add(saleForm);
+
+        dgvCart.Dock = DockStyle.Fill;
+        dgvCart.ReadOnly = true;
+        dgvCart.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        dgvCart.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        top.Controls.Add(dgvCart);
+        split.Panel1.Controls.Add(top);
+
+        dgvSales.Dock = DockStyle.Fill;
+        dgvSales.ReadOnly = true;
+        dgvSales.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        split.Panel2.Controls.Add(dgvSales);
+
+        return tab;
+    }
+
+    private TabPage BuildReportsTab()
+    {
+        var tab = new TabPage("Reports");
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(10) };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        tab.Controls.Add(layout);
+
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill };
+        buttons.Controls.Add(MakeButton("Low Stock", () => ShowReport(_reportService.GetLowStockReport())));
+        buttons.Controls.Add(MakeButton("Sales By Product", () => ShowReport(_reportService.GetSalesByProductReport())));
+        buttons.Controls.Add(MakeButton("Products By Category", () => ShowReport(_reportService.GetProductsByCategoryReport())));
+        buttons.Controls.Add(MakeButton("Supplier Stock List", () => ShowReport(_reportService.GetSupplierStockListReport())));
+        layout.Controls.Add(buttons);
+
+        dgvReports.Dock = DockStyle.Fill;
+        dgvReports.ReadOnly = true;
+        dgvReports.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        layout.Controls.Add(dgvReports);
+
+        return tab;
+    }
 
     private static void AddLabeledControl(TableLayoutPanel panel, string label, Control control)
     {
@@ -346,7 +424,25 @@ public class MainForm : Form
             .ToList();
     }
 
+    private void LoadSaleProducts()
+    {
+        var products = _productService.GetAllProducts().Where(p => p.QuantityInStock > 0).ToList();
+        cmbSaleProduct.DataSource = products;
+        cmbSaleProduct.DisplayMember = "Title";
+        cmbSaleProduct.ValueMember = "Id";
+    }
 
+    private void LoadSales()
+    {
+        dgvSales.DataSource = _saleService.GetRecentSales().Select(s => new
+        {
+            s.SaleNumber,
+            s.SaleDate,
+            Items = s.SaleItems.Count,
+            s.PaymentMethod,
+            s.TotalAmount
+        }).ToList();
+    }
 
     private void AddProduct()
     {
@@ -553,10 +649,95 @@ public class MainForm : Form
         txtSupplierAddress.Clear();
     }
 
+    private void AddToCart()
+    {
+        if (cmbSaleProduct.SelectedItem is not Product product) return;
+        int quantity = (int)numSaleQuantity.Value;
+        var existing = _cart.FirstOrDefault(c => c.ProductId == product.Id);
+        if (existing == null)
+        {
+            _cart.Add(new CartLine(product.Id, product.Title, product.Price, quantity));
+        }
+        else
+        {
+            existing.Quantity += quantity;
+        }
+        RefreshCart();
+    }
+
+    private void RemoveCartItem()
+    {
+        if (dgvCart.CurrentRow?.Cells["ProductId"].Value == null) return;
+        int productId = Convert.ToInt32(dgvCart.CurrentRow.Cells["ProductId"].Value);
+        var item = _cart.FirstOrDefault(c => c.ProductId == productId);
+        if (item != null) _cart.Remove(item);
+        RefreshCart();
+    }
+
+    private void CompleteSale()
+    {
+        var requests = _cart.Select(c => new SaleItemRequest { ProductId = c.ProductId, Quantity = c.Quantity }).ToList();
+        var result = _saleService.RecordSale(requests, cmbPaymentMethod.Text);
+        ShowResult(result);
+        if (result.Success)
+        {
+            _cart.Clear();
+            RefreshCart();
+            LoadProducts();
+            LoadSales();
+        }
+    }
+
+    private void ClearCart()
+    {
+        _cart.Clear();
+        RefreshCart();
+    }
+
+    private void RefreshCart()
+    {
+        dgvCart.DataSource = _cart.Select(c => new
+        {
+            c.ProductId,
+            c.Product,
+            c.UnitPrice,
+            c.Quantity,
+            LineTotal = c.LineTotal
+        }).ToList();
+        lblSaleTotal.Text = $"Total: {_cart.Sum(c => c.LineTotal):0.00}";
+    }
+
+    private void ShowReport(object reportData)
+    {
+        dgvReports.DataSource = reportData;
+    }
+
+    private static void ShowResult(OperationResult result)
+    {
+        MessageBox.Show(result.Message, result.Success ? "Success" : "Validation", MessageBoxButtons.OK,
+            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+    }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         _db.Dispose();
         base.OnFormClosed(e);
+    }
+
+    private sealed class CartLine
+    {
+        public int ProductId { get; }
+        public string Product { get; }
+        public decimal UnitPrice { get; }
+        public int Quantity { get; set; }
+        public decimal LineTotal => UnitPrice * Quantity;
+
+        public CartLine(int productId, string product, decimal unitPrice, int quantity)
+        {
+            ProductId = productId;
+            Product = product;
+            UnitPrice = unitPrice;
+            Quantity = quantity;
+        }
     }
 }
